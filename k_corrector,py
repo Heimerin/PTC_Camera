@@ -1,0 +1,50 @@
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+from astropy.io import fits
+
+def apply_k_correction(image_path: Path, calib_path: Path, output_path: Path):
+    """
+    Koryguje nieliniowość zdjęcia dzieki K_ADC.
+    Każdy pikse mnożony przez K_fit(S) / K_low.
+    """
+    if not calib_path.exists():
+        raise FileNotFoundError(f" Brak pliku kalibracji: {calib_path}")
+        
+    with open(calib_path, 'r', encoding='utf-8') as f:
+        calib = json.load(f)
+        
+    k_low = calib['k_low']
+    k_fit_coeffs = np.array(calib['k_fit_coeffs'])
+    print(f"Referencyjne K_low: {k_low:.6g}")
+
+    
+    with fits.open(image_path) as hdul:
+        header = hdul[0].header
+        #float 64 zey nie bylo overflow
+        raw_data = hdul[0].data.astype(np.float64)
+    
+    k_fit_map = np.polyval(k_fit_coeffs, raw_data)
+    multiplier_map = k_fit_map / k_low
+    corrected_data = raw_data * multiplier_map
+
+    header.add_history(f"Applied non-linearity correction using K_ADC profile.")
+    header.add_history(f"K_low reference: {k_low}")
+    header.add_history(f"Polynomial coeffs: {k_fit_coeffs.tolist()}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fits.writeto(output_path, corrected_data.astype(np.float32), header, overwrite=True)
+    print(f"Pomyślnie zapisano skorygowany plik do: {output_path}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Image corrector using K_ADC polynomials.")
+    parser.add_argument("--image", required=True, help="Path to the raw FITS image")
+    parser.add_argument("--calib", required=True, help="Path to k_calibration.json")
+    parser.add_argument("--out", required=True, help="Path for the output corrected FITS image")
+    args = parser.parse_args()
+    
+    apply_k_correction(Path(args.image), Path(args.calib), Path(args.out))
+
+if __name__ == "__main__":
+    main()
