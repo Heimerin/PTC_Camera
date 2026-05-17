@@ -649,7 +649,8 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
 
     nlk = np.full_like(signal, np.nan, dtype=np.float64)
     if np.isfinite(k_low) and k_low > 0:
-        nlk = (k_low - k_points) / k_low * 100.0
+        #zamfias
+        nlk[fit_mask] = (k_low - k_points[fit_mask]) / k_low * 100.0
 
     exposure_array = np.array([float(p["exposure"]) for p in raw_points])
     sig_slope, _sig_r2 = through_origin_fit(exposure_array[fit_mask], signal[fit_mask])
@@ -658,8 +659,9 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
         expected = sig_slope * exposure_array
         mask_expected = np.isfinite(expected) & (np.abs(expected) > 0)
         signal_linearity[mask_expected] = 100.0 * (signal[mask_expected] - expected[mask_expected]) / expected[mask_expected]
-
+#to tu tez
     max_abs_k_nl = float(np.nanmax(np.abs(nlk[np.isfinite(nlk)]))) if np.any(np.isfinite(nlk)) else float("nan")
+    #max_abs_k_nl = float(np.nanmax(np.abs(nlk[np.isfinite(nlk)]))) if np.any(np.isfinite(nlk)) else float("nan")    #nonlinearity ma byc liczone dla calosci 
     max_abs_sig_nl = (
         float(np.nanmax(np.abs(signal_linearity[np.isfinite(signal_linearity)])))
         if np.any(np.isfinite(signal_linearity))
