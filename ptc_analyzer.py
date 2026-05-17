@@ -544,8 +544,10 @@ def write_markdown_report(results: PTCResults, output_dir: Path) -> None:
 def analyze_camera(config: AnalysisConfig) -> PTCResults:
     bias_files = list_image_files(config.bias_dir)
     flat_files = list_image_files(config.flat_dir)
-    if not bias_files: raise ValueError(f"No bias files found in {config.bias_dir}")
-    if not flat_files: raise ValueError(f"No flat files found in {config.flat_dir}")
+    if not bias_files:
+        raise ValueError(f"No bias files found in {config.bias_dir}")
+    if not flat_files:
+        raise ValueError(f"No flat files found in {config.flat_dir}")
 
     output_dir = Path(config.output_dir).expanduser() / safe_name(config.camera_name)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -610,7 +612,7 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
     shot_variance = np.array([float(p["shot_variance_dn2"]) for p in raw_points])
     k_points = np.array([float(p["k_adc_e_per_dn_point"]) for p in raw_points])
 
-    print(f"Oczekiwanie na zaznaczenie zakresu K_ADC dla kamery {config.camera_name}...")
+    print(f"Awaiting for choosing range for {config.camera_name}...")
     low_val, high_val = interactive_range_selection(signal, k_points, config.camera_name)
     
     fit_mask = (signal >= low_val) & (signal <= high_val)
@@ -637,7 +639,7 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
     calib_file_path = output_dir / "k_calibration.json"
     with open(calib_file_path, "w", encoding="utf-8") as f:
         json.dump(calibration_data, f, indent=4)
-    print(f"---> Zapisano profil kalibracji K_ADC do: {calib_file_path}")
+    print(f"K_ADC for: {calib_file_path}")
 
     slope, intercept, r2 = linear_fit(signal[fit_mask], read_shot_variance[fit_mask])
     if np.isfinite(slope) and slope > 0:
@@ -649,8 +651,7 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
 
     nlk = np.full_like(signal, np.nan, dtype=np.float64)
     if np.isfinite(k_low) and k_low > 0:
-        #zamfias
-        nlk[fit_mask] = (k_low - k_points[fit_mask]) / k_low * 100.0
+        nlk = (k_low - k_points) / k_low * 100.0
 
     exposure_array = np.array([float(p["exposure"]) for p in raw_points])
     sig_slope, _sig_r2 = through_origin_fit(exposure_array[fit_mask], signal[fit_mask])
@@ -659,9 +660,12 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
         expected = sig_slope * exposure_array
         mask_expected = np.isfinite(expected) & (np.abs(expected) > 0)
         signal_linearity[mask_expected] = 100.0 * (signal[mask_expected] - expected[mask_expected]) / expected[mask_expected]
-#to tu tez
-    max_abs_k_nl = float(np.nanmax(np.abs(nlk[np.isfinite(nlk)]))) if np.any(np.isfinite(nlk)) else float("nan")
-    #max_abs_k_nl = float(np.nanmax(np.abs(nlk[np.isfinite(nlk)]))) if np.any(np.isfinite(nlk)) else float("nan")    #nonlinearity ma byc liczone dla calosci 
+
+    if np.isfinite(k_low) and k_low > 0 and np.any(fit_mask):
+        max_abs_k_nl = float(np.nanmax(np.abs(nlk[fit_mask])))
+    else:
+        max_abs_k_nl = float("nan")
+
     max_abs_sig_nl = (
         float(np.nanmax(np.abs(signal_linearity[np.isfinite(signal_linearity)])))
         if np.any(np.isfinite(signal_linearity))
@@ -672,9 +676,6 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
     observed_fw_e = observed_fw_dn * k_adc if np.isfinite(k_adc) else float("nan")
     turnover_fw_dn = estimate_ptc_turnover(signal, read_shot_noise)
     turnover_fw_e = turnover_fw_dn * k_adc if np.isfinite(k_adc) else float("nan")
-
-    fw_lin_dn = float("nan")
-    fw_lin_e = float("nan")
 
     read_noise_e = read_noise_dn * k_adc if np.isfinite(k_adc) else float("nan")
     dynamic_range = observed_fw_e / read_noise_e if read_noise_e and read_noise_e > 0 else float("nan")
@@ -739,8 +740,6 @@ def analyze_camera(config: AnalysisConfig) -> PTCResults:
         full_well_e_observed=observed_fw_e,
         full_well_dn_ptc_turnover=turnover_fw_dn,
         full_well_e_ptc_turnover=turnover_fw_e,
-        full_well_dn_at_linearity_limit=fw_lin_dn,
-        full_well_e_at_linearity_limit=fw_lin_e,
         dynamic_range=float(dynamic_range),
         dynamic_range_db=float(dynamic_range_db),
         fpn_percent_median=fpn_percent_median,
